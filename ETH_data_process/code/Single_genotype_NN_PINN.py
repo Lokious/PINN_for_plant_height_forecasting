@@ -9,30 +9,23 @@ import random
 import pandas as pd
 import torch.optim as optim
 import re
-
-from matplotlib.pyplot import savefig
-from pytensor.tensor import tensor
-from scipy.integrate import odeint
 import matplotlib.pyplot as plt
 import seaborn as sns
 import colorsys
 from scipy.integrate import odeint
-from scipy.ndimage import label
 from scipy.optimize import least_squares
-from sklearn.base import BaseEstimator, RegressorMixin
-from torch.onnx.symbolic_opset9 import detach
 from torch.utils.data import TensorDataset, DataLoader
 from matplotlib.backends.backend_pdf import PdfPages
 from torchmetrics.regression import SpearmanCorrCoef
 from torchmetrics import R2Score
 from scipy.stats import spearmanr
 import wandb
-from models import (create_tensor_dataset, convert_inputx_to_tesor_list, count_parameters,minmax_scaler,
-                    reverse_min_max_scaling,train_test_split_based_on_group,manually_data_split_based_on_one_group)
-from torchviz import make_dot
+from Tensor_prepare import (create_tensor_dataset, convert_inputx_to_tesor_list, count_parameters, minmax_scaler,
+                            reverse_min_max_scaling, train_test_split_based_on_group, manually_data_split_based_on_one_group)
+
 import itertools
 import dill
-from Customize_RNN import LSTMModel,RNNModel
+
 DEVICE = torch.device("cpu")  #device cup or gpu
 # DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")  #device cup or gpu
 current_pwd = os.getcwd()
@@ -103,36 +96,6 @@ class LSTM_ts_and_temperature_predict_height(torch.nn.Module):
                 nn.init.orthogonal_(param)
             elif 'bias' in name:
                 nn.init.constant_(param, 0.0001)
-            #print(name, param)
-
-class RNN_ts_predict_growth_curve(torch.nn.Module):
-    '''
-    this class is to define RNN model which use time index to predict biomass
-    '''
-    def __init__(self,num_layer_ts =3, initial_r=torch.tensor([0.29759]),initial_ymax=torch.tensor([0.59477])): #3
-        super().__init__()
-        # set initial value for ode parameters
-        self.r = nn.Parameter(data=initial_r, requires_grad=True)
-        self.y_max = nn.Parameter(data=initial_ymax, requires_grad=True)
-        self.ts = nn.RNN(input_size=1,hidden_size=3,num_layers=1)
-        self.ts2 = nn.RNN(input_size=3, hidden_size=1, num_layers=num_layer_ts)
-        self.relu = nn.LeakyReLU()
-    def forward(self,ts):
-
-        # print(ts.shape)
-        ts_out,c = self.ts(ts) #(shape:[120,3])
-        ts_out, c = self.ts2(ts_out)  # (shape:[120,3])
-        #covert to all positive
-        ts_out = self.relu(ts_out)
-        return ts_out
-    def init_network(self):
-        # initialize weight and bias(use xavier and 0 for weight and bias separately)
-        for name, param in self.named_parameters():
-            if 'weight' in name:
-                # nn.init.constant_(param, 0.0046)
-                nn.init.xavier_uniform_(param)
-            elif 'bias' in name:
-                nn.init.constant_(param, 0.0)
             #print(name, param)
 
 def smoothing_spline(y,t):
@@ -955,7 +918,7 @@ def run_logistic_ode_pinn(data_path='test_seq.csv', save_directory='/pinn_result
                               start_day=None, genotype: int | list = 2, parameter_boundary='', if_pinn=True,
                               penalize_y='', fit_ml_first=False, years: tuple = (2018, 2019, 2021,2022),corrected =False,
                               smooth=False,fill_in_na_at_start=False,multiple_r=False,rescale=False,randomseed=None,
-                          weight=None,temperature_pinn=False,environment_input:tuple=('Air_temperature_2_m'),genetics_input:bool=False,
+                          weight=None,temperature_pinn=False,environment_input:tuple=('Air_temperature_2_m'),
                           snp_encoding_type='one_hot'):
     """
     :param
@@ -970,7 +933,7 @@ def run_logistic_ode_pinn(data_path='test_seq.csv', save_directory='/pinn_result
         parameter_boundary: string,default: ''. If it's not equal to '', will add add extra penalty to negetive r
         if_pinn: boolean, default:True. If ture run with pinn mode, other wise train model only with masked MSE loss
     """
-    from genetic_embedding import pretrain_genetics_embedding
+
     wand_name= mode
     if if_pinn == False:
         ode_int_loss_list = [False]
@@ -978,8 +941,7 @@ def run_logistic_ode_pinn(data_path='test_seq.csv', save_directory='/pinn_result
         penalize_y = ''
         fit_ml_first = False
         multiple_r = False
-        if genetics_input is None:
-            parameter_boundary = ''
+        parameter_boundary = ''
         print('set all related mode: penalize r, penalize y, multiple r, and fit ML as False or \'\'')
         print('weight:{}'.format(weight))
         weight = 0
@@ -1065,19 +1027,12 @@ def run_logistic_ode_pinn(data_path='test_seq.csv', save_directory='/pinn_result
         env_input_size = envir_tensor_dataset.shape[-1]
     # either same year different genotype or other way around,
     # same year same genotype won't resent in train test together
-    if genetics_input:
-        group_df = g_df[['year_site.harvest_year', 'genotype.id']]
-        train_test_validation_dictionary = train_test_split_based_on_group(dfs[0], group_df,
-                                                                           group_name=[
-                                                                               'year_site.harvest_year',
-                                                                           ], n_split=5)  # 'genotype.id'
 
-    else:
-        group_df = g_df[['year_site.harvest_year', 'genotype.id']]
-        train_test_validation_dictionary = train_test_split_based_on_group(dfs[0], group_df,
-                                                                           group_name=
-                                                                           'year_site.harvest_year'
-                                                                           , n_split=5)
+    group_df = g_df[['year_site.harvest_year', 'genotype.id']]
+    train_test_validation_dictionary = train_test_split_based_on_group(dfs[0], group_df,
+                                                                       group_name=
+                                                                       'year_site.harvest_year'
+                                                                       , n_split=5)
     # raise EOFError
     print(group_df)
     group_df = group_df.copy()
@@ -1145,11 +1100,6 @@ def run_logistic_ode_pinn(data_path='test_seq.csv', save_directory='/pinn_result
     #                                                   group_df['year_site.harvest_year'])
     #
     # raise EOFError
-    if genetics_input:
-        mode = mode + 'genetics_input'+snp_encoding_type
-        if len(genotype)<=2:
-            print('Warning: use genetics snps information as input, but only include data from one genotype')
-
     if rescale:
         #if rescale the order for processing envir_tensor_dataset need to be: minmax scaling -> smoothing ->
         # (drop values based on tensor_dataset) -> replace na with 0.0 -> (fill in small value at start for tensor_dataset)
@@ -1226,55 +1176,14 @@ def run_logistic_ode_pinn(data_path='test_seq.csv', save_directory='/pinn_result
         train_env = envir_tensor_dataset[start_day:, train_index, :].to(DEVICE).requires_grad_(True)
         print('train env shape:{}'.format(train_env.shape))
         # print(train_env)
-        if genetics_input:
-            # Get unique values and create a mapping for year
-            label_to_index = {2018:0,2019:1,2021:2,2022:3}
 
-            # Convert the original list to indices
-            train_year_list_id = [label_to_index[label] for label in train_year_list]
-            validation_year_list_id = [label_to_index[label] for label in validation_year_list]
-            test_list_id = [label_to_index[label] for label in test_year_list]
-            # one-hot encod year and concat to genetics input to allow G by E interation
-            year_tensor_train = torch.tensor(train_year_list_id).to(DEVICE)
-            year_tensor_validation = torch.tensor(validation_year_list_id).to(DEVICE)
-            year_tensor_test = torch.tensor(test_list_id).to(DEVICE)
-            if snp_encoding_type == 'one_hot':
-                year_tensor_train = torch.nn.functional.one_hot(year_tensor_train).unsqueeze(dim=-1).to(DEVICE)
-                year_tensor_validation = torch.nn.functional.one_hot(year_tensor_validation).unsqueeze(dim=-1).to(
-                    DEVICE)
-                year_tensor_test = torch.nn.functional.one_hot(year_tensor_test).unsqueeze(dim=-1).to(DEVICE)
-
-            # the same train test split as PINN input
-            year_list = (year_tensor_train,year_tensor_validation,year_tensor_test)
-            hyper_parameter,genetics_tensor = pretrain_genetics_embedding((train_genotype_list, validation_genotype_list, test_genotype_list),year_list,
-                                                                          file_name='{}'.format(str(mode)),snp_encode_name=snp_encoding_type)
-            if snp_encoding_type == '' or snp_encoding_type == 'one_hot':
-                out_channel_1, out_channel_2, kernel1, kernel2 = hyper_parameter
-            else:
-                size = hyper_parameter[0]
-            #load best pretrained model
-            genetics_train_year =genetics_tensor[0]
-            genetics_validation_year = genetics_tensor[1]
-            genetics_test_year = genetics_tensor[2]
-            # genetics_train_year = copy.deepcopy(torch.cat([genetics_train, year_tensor_train], dim=-1))
-            # genetics_validation_year = copy.deepcopy(torch.cat([genetics_validation, year_tensor_validation], dim=-1))
-            # genetics_test_year = copy.deepcopy(torch.cat([genetics_test, year_tensor_test], dim=-1))
-
-            genotype_year_tensorlist =[train_genotype_list, validation_genotype_list, test_genotype_list] #genotype id list
-            print('train genotype:{}'.format(train_genotype_list))
-            print('validation genotype:{}'.format(validation_genotype_list))
-            print('test genotype:{}'.format(test_genotype_list))
-            # train_label_list = group_df[train_index].to_list()
-            # validation_label_list = group_df[validation_index].to_list()
-            # test_label_list = group_df[validation_index].to_list()
-        else:
-            genetics_model = None
-            genetics_train = None
-            genetics_validation = None
-            genetics_test = None
-            genetics_train_year=None
-            genetics_validation_year=None
-            genetics_test_year=None
+        genetics_model = None
+        genetics_train = None
+        genetics_validation = None
+        genetics_test = None
+        genetics_train_year=None
+        genetics_validation_year=None
+        genetics_test_year=None
 
         #split train validation test
         validation_y = tensor_dataset[start_day:, validation_index, :].to(DEVICE)
@@ -1355,15 +1264,6 @@ def run_logistic_ode_pinn(data_path='test_seq.csv', save_directory='/pinn_result
                                         torch.manual_seed(j)  # the random seeds works on my laptop,
                                         # while seems the same random seed does not give the same result on server
                                         currenttime = time.time()
-                                        if genetics_input:
-                                            if snp_encoding_type == '' or snp_encoding_type == 'one_hot':
-                                                with open('snps_embedding_model/{0}_{1}_{2}_{3}_{4}_{5}.dill'.format(str(mode),out_channel_1,
-                                                                                                         out_channel_2, kernel1,
-                                                                                                         kernel2,snp_encoding_type),'rb') as file2:
-                                                    genetics_model = dill.load(file2)
-                                            else:
-                                                with open('snps_embedding_model/{}_{}_{}.dill'.format(str(mode), size, snp_encoding_type),'rb') as file2:
-                                                    genetics_model = dill.load(file2)
 
                                         if multiple_r:
                                             print('get different r at different time')
@@ -1532,36 +1432,21 @@ def run_logistic_ode_pinn(data_path='test_seq.csv', save_directory='/pinn_result
                                         corre_test = mask_dtw_loss(true_y=copy_y_test, predict_y=predict_y_test_detach)
                                         print('test shapeDTW')
                                         print(corre_test)
-                                        if genetics_input:
-                                            #different genotype different color
-                                            fig_residual_train = plot_residual(copy_y_train, predict_y_train_detach,
-                                                                               color_label=train_genotype_list,
-                                                                               marker_label=train_year_list,
-                                                                               title='train')
-                                            fig_residual_validation = plot_residual(copy_y_validation,
-                                                                                    predict_y_validation_detach,
-                                                                                    color_label=validation_genotype_list,
-                                                                                    marker_label=validation_year_list,
-                                                                                    title='validation')
-                                            fig_residual_test = plot_residual(copy_y_test, predict_y_test_detach,
-                                                                              color_label=test_genotype_list,
-                                                                              marker_label=test_year_list,
-                                                                              title='test')
-                                        else:
-                                            #year is marked by color
-                                            fig_residual_train = plot_residual(copy_y_train, predict_y_train_detach,
-                                                                               color_label=train_group_df_avg['year_site.harvest_year'],
-                                                                               marker_label=train_group_df_avg['genotype.id'],
-                                                                               title='train')
-                                            fig_residual_validation = plot_residual(copy_y_validation,
-                                                                                    predict_y_validation_detach,
-                                                                                    color_label=validation_group_df_avg['year_site.harvest_year'],
-                                                                                    marker_label=validation_group_df_avg['genotype.id'],
-                                                                                    title='validation')
-                                            fig_residual_test = plot_residual(copy_y_test, predict_y_test_detach,
-                                                                              color_label=test_group_df_avg['year_site.harvest_year'],
-                                                                              marker_label=train_group_df_avg['genotype.id'],
-                                                                              title='test')
+
+                                        #year is marked by color
+                                        fig_residual_train = plot_residual(copy_y_train, predict_y_train_detach,
+                                                                           color_label=train_group_df_avg['year_site.harvest_year'],
+                                                                           marker_label=train_group_df_avg['genotype.id'],
+                                                                           title='train')
+                                        fig_residual_validation = plot_residual(copy_y_validation,
+                                                                                predict_y_validation_detach,
+                                                                                color_label=validation_group_df_avg['year_site.harvest_year'],
+                                                                                marker_label=validation_group_df_avg['genotype.id'],
+                                                                                title='validation')
+                                        fig_residual_test = plot_residual(copy_y_test, predict_y_test_detach,
+                                                                          color_label=test_group_df_avg['year_site.harvest_year'],
+                                                                          marker_label=train_group_df_avg['genotype.id'],
+                                                                          title='test')
 
                                         try:
                                             # dataframe to same result
@@ -1599,18 +1484,6 @@ def run_logistic_ode_pinn(data_path='test_seq.csv', save_directory='/pinn_result
                                                     axis=1)
                                                 predicte_value_gradient.to_csv(
                                                     'pinn_result/predicted_r_sequence_{}.csv'.format(mode))
-                                            if genetics_input:
-                                                    new_predict_r = pd.DataFrame(
-                                                        data={col_name: torch.squeeze(
-                                                            r_value_pred.detach()).cpu()},
-                                                        index=range(predict_y_train.detach().shape[1]))
-                                                    predicte_value_r = pd.concat(
-                                                        [predicte_value_r, new_predict_r],
-                                                        axis=1)
-                                                    predicte_value_r.to_csv(
-                                                        'pinn_result/predicted_r_sequence_{}.csv'.format(mode))
-                                                    predicte_value_gradient.to_csv(
-                                                'pinn_result/gradient_to_temperature_curve_{}.csv'.format(mode))
                                         new_row = pd.DataFrame(
                                             data={"lr": lr,
                                                   "n_split": n,
@@ -1666,70 +1539,38 @@ def run_logistic_ode_pinn(data_path='test_seq.csv', save_directory='/pinn_result
                                         if not if_pinn:
                                             r_value_pred=None
                                             y_max_pred=None
-                                        if genetics_input:
-                                            train_fig = plot_save_predict_curve(current_pwd, 'train',
-                                                                                predict_y_train_detach,
-                                                                                r_value_pred,
-                                                                                save_directory, copy_y_train, ts_train_avg,
-                                                                                y_max_pred,
-                                                                                marker_label=train_group_df_avg['year_site.harvest_year'],
-                                                                                color_label=train_group_df_avg['genotype.id'],
-                                                                                corresponding_environment=train_env,name=train_predict_plot_save_name)
-
-                                            #
-                                            validation_fig = plot_save_predict_curve(current_pwd,
-                                                                                     'validation',
-                                                                                     predict_y_validation_detach,
-                                                                                     r_value_pred,
-                                                                                     save_directory,
-                                                                                     copy_y_validation,
-                                                                                     ts_validation_avg, y_max_pred,
-                                                                                     marker_label=validation_group_df_avg['year_site.harvest_year'],
-                                                                                     color_label=validation_group_df_avg['genotype.id'],
-                                                                                     corresponding_environment=validation_env,name=validation_predict_plot_save_name)
-
-                                            test_fig = plot_save_predict_curve(current_pwd, 'test',
-                                                                               predict_y_test_detach, r_value_pred,
-                                                                               save_directory, copy_y_test, ts_test_avg,
-                                                                               y_max_pred,
-                                                                               marker_label=test_group_df_avg['year_site.harvest_year'],
-                                                                               color_label=test_group_df_avg['genotype.id'],
-                                                                               corresponding_environment=test_env
-                                                                               , name=test_predict_plot_save_name
-                                                                               )
-                                        else:
-                                            train_fig = plot_save_predict_curve(current_pwd, 'train',
-                                                                                predict_y_train_detach,
-                                                                                r_value_pred_mean,
-                                                                                save_directory, copy_y_train, ts_train_avg,
-                                                                                y_max_pred,
-                                                                                marker_label=train_group_df_avg['genotype.id'],
-                                                                                color_label=train_group_df_avg['year_site.harvest_year'],
-                                                                                corresponding_environment=train_env_avg,name=train_predict_plot_save_name)
-                                            # validation_predict_plot_save_name = '{}{}/validation_predict_{}split_hidden{}_num_layer{}_ts_layer_{}_lr_{}_weight_physic_{}_dropout_{}_ode_int_{}_{}_rs_{}.png'.format(
-                                            #     current_pwd, save_directory, n, hidden, num_layer, ts_layer, lr, weight_physic,drop_out,ode_int_loss, mode, j)
-                                            #
-                                            validation_fig = plot_save_predict_curve(current_pwd,
-                                                                                     'validation',
-                                                                                     predict_y_validation_detach,
-                                                                                     r_value_pred_mean,
-                                                                                     save_directory,
-                                                                                     copy_y_validation,
-                                                                                     ts_validation_avg, y_max_pred,
-                                                                                     marker_label=validation_group_df_avg['genotype.id'],
-                                                                                     color_label=validation_group_df_avg['year_site.harvest_year'],
-                                                                                     corresponding_environment=validation_env_avg,name=validation_predict_plot_save_name)
-                                            # test_predict_plot_save_name = '{}{}/test_predict_{}split_hidden{}_num_layer{}_ts_layer_{}_lr_{}_weight_physic_{}_dropout_{}_ode_int_{}_{}_rs_{}.png'.format(
-                                            #     current_pwd, save_directory, n, hidden, num_layer, ts_layer, lr, weight_physic,drop_out,ode_int_loss, mode, j)
-                                            #
-                                            test_fig = plot_save_predict_curve(current_pwd, 'test',
-                                                                               predict_y_test_detach, r_value_pred_mean,
-                                                                               save_directory, copy_y_test, ts_test_avg,
-                                                                               y_max_pred,
-                                                                               marker_label=test_group_df_avg['genotype.id'],
-                                                                               color_label=test_group_df_avg['year_site.harvest_year'],
-                                                                               corresponding_environment=test_env_avg,name=test_predict_plot_save_name
-                                                                               )
+                                        train_fig = plot_save_predict_curve(current_pwd, 'train',
+                                                                            predict_y_train_detach,
+                                                                            r_value_pred_mean,
+                                                                            save_directory, copy_y_train, ts_train_avg,
+                                                                            y_max_pred,
+                                                                            marker_label=train_group_df_avg['genotype.id'],
+                                                                            color_label=train_group_df_avg['year_site.harvest_year'],
+                                                                            corresponding_environment=train_env_avg,name=train_predict_plot_save_name)
+                                        # validation_predict_plot_save_name = '{}{}/validation_predict_{}split_hidden{}_num_layer{}_ts_layer_{}_lr_{}_weight_physic_{}_dropout_{}_ode_int_{}_{}_rs_{}.png'.format(
+                                        #     current_pwd, save_directory, n, hidden, num_layer, ts_layer, lr, weight_physic,drop_out,ode_int_loss, mode, j)
+                                        #
+                                        validation_fig = plot_save_predict_curve(current_pwd,
+                                                                                 'validation',
+                                                                                 predict_y_validation_detach,
+                                                                                 r_value_pred_mean,
+                                                                                 save_directory,
+                                                                                 copy_y_validation,
+                                                                                 ts_validation_avg, y_max_pred,
+                                                                                 marker_label=validation_group_df_avg['genotype.id'],
+                                                                                 color_label=validation_group_df_avg['year_site.harvest_year'],
+                                                                                 corresponding_environment=validation_env_avg,name=validation_predict_plot_save_name)
+                                        # test_predict_plot_save_name = '{}{}/test_predict_{}split_hidden{}_num_layer{}_ts_layer_{}_lr_{}_weight_physic_{}_dropout_{}_ode_int_{}_{}_rs_{}.png'.format(
+                                        #     current_pwd, save_directory, n, hidden, num_layer, ts_layer, lr, weight_physic,drop_out,ode_int_loss, mode, j)
+                                        #
+                                        test_fig = plot_save_predict_curve(current_pwd, 'test',
+                                                                           predict_y_test_detach, r_value_pred_mean,
+                                                                           save_directory, copy_y_test, ts_test_avg,
+                                                                           y_max_pred,
+                                                                           marker_label=test_group_df_avg['genotype.id'],
+                                                                           color_label=test_group_df_avg['year_site.harvest_year'],
+                                                                           corresponding_environment=test_env_avg,name=test_predict_plot_save_name
+                                                                           )
                                         wandb.log({'end_epoch':stop_num_epochs})
                                         wandb.log({'train_prediction_plot':wandb.Image(train_fig)})
                                         wandb.log({'val_prediction_plot': wandb.Image(validation_fig)})
@@ -1754,8 +1595,6 @@ def run_logistic_ode_pinn(data_path='test_seq.csv', save_directory='/pinn_result
 
 
 def fit_ode_for_seq_seperatelly_plot(data_path,genotype, start_day,years,corrected=False,result_df=None ):
-
-
 
     input_seq = pd.read_csv(data_path, header=0, index_col=0)
     # reset timestamp
@@ -1850,111 +1689,6 @@ def plot_residual(copy_y_train, predict_y_train_detach,color_label,marker_label,
     #     current_pwd, save_directory, n, hidden, num_layer, ts_layer, lr, mode))
     # plt.show()
     return fig_residual
-
-def run_pinn_with_simulated_data(
-            data_x_file: str = '../processed_data/simulated_data/simulated_X_data_logistic_time_dependent_noise_0.2.csv',
-            weight=2, parameter_boundary=False,missing_value_precentage=0.6):
-    """
-    run ml model, similar to run_logistic_ode_pinn(), but with simulated biomass data (orginal data/10). Training set is
-    single time serie to get r and ymax for seperate sample comparision with real parameters value
-    """
-
-    file_name = data_x_file.split('/')[-1]
-    path = "/".join(data_x_file.split('/')[:-1])
-    print(file_name,path)
-    #read noise free data
-    ode_df = pd.read_csv(data_x_file,header=0,index_col=0)
-
-    parameters_df_list = pd.read_csv('{}/parameters_list_{}'.format(path,file_name),header=0,index_col=0).T
-    print(parameters_df_list)
-    Y_tensor = convert_inputx_to_tesor_list([ode_df])
-    # print(Y_tensor)
-    shape = Y_tensor.shape
-    print(torch.count_nonzero(Y_tensor))
-
-    index_list = [list(range(shape[0])),list(range(shape[1])),list(range(shape[2]))]
-    # print(index_list)
-    index_list_combination = list(itertools.product(*index_list))
-    assign_missing_index = random.sample(index_list_combination, int(len(index_list_combination)*missing_value_precentage))
-    # print(assign_missing_index)
-    for indexs in assign_missing_index:
-        # print(indexs)
-        # print(*indexs)
-        i,j,p = indexs[0],indexs[1],indexs[2]
-        Y_tensor[i,j,p] = 0.0
-    # print(Y_tensor)
-    print(torch.count_nonzero(Y_tensor))
-    # raise ValueError
-    # #devided Y by 10, then value is betwen 0 and 1
-    # Y_tensor = Y_tensor/10
-    print(Y_tensor)
-    Y_tensor =torch.squeeze(Y_tensor)#shape [120,300]
-    import dill
-    with open('scaled_{}.dill'.format("_".join(file_name.split('_')[1:])), 'wb') as file:
-        dill.dump(Y_tensor, file)
-    file.close()
-
-    print(Y_tensor.shape)
-    seq_length = Y_tensor.shape[0]
-    num_seq = Y_tensor.shape[1]
-    print('seq length {}'.format(seq_length))
-    #120 time steps, between 0.1 to 12.0
-    ts_X = torch.linspace(0.1, seq_length/10, seq_length).unsqueeze(dim=1).unsqueeze(dim=1).repeat(1,num_seq,1)# time sequences steps
-    # print(ts_X.shape)#[120,300,1]
-    parameters_df = pd.DataFrame()
-    for seq in range(num_seq):
-
-        parameter_df = parameters_df_list.iloc[seq,:]
-        real_r = torch.tensor(data =parameter_df['r'])
-        mmax = torch.tensor(data =parameter_df['Mmax'])
-        # train model for each sequence separately
-        model = RNN_ts_predict_growth_curve(num_layer_ts=2,initial_r=real_r,initial_ymax=mmax)
-
-        Y=Y_tensor[:,seq].unsqueeze(dim=1)
-        ts = ts_X[:,seq,:].requires_grad_(True)
-        # print(Y)
-        # print(ts)
-        print(count_parameters(model))
-
-        model, epoch, loss_ratiodf, parameters_change = train_logistic_model_simulated(model, Y, ts, epoches=2000,
-                                                                                       weight=weight,
-                                                                                       parameter_boundary=parameter_boundary,
-                                                                                       lr=0.001)
-        r,y_max = print_parameters_from_ode(model)
-        new_row = pd.DataFrame(data={'r':r,'Mmax':y_max},index=[0])
-        parameters_df = pd.concat([parameters_df,new_row])
-        save_name = "predict_" + "_".join(file_name.split('_')[1:])
-        print('{}/{}'.format(path, save_name))
-        parameters_df.to_csv('{}/physic_weight_{}_{}_na_{}_{}'.format(path,weight,parameter_boundary,missing_value_precentage,save_name))
-        loss_ratiodf.to_csv('{}/loss_ratio_seq{}_physic_weight_{}_na_{}_{}_{}'.format(path,seq,weight,parameter_boundary,missing_value_precentage,save_name))
-        parameters_change.to_csv('{}/parameters_changing_in_training_seq{}_physic_weight_{}_na_{}_{}_{}'.format(path,seq,weight,parameter_boundary,missing_value_precentage,save_name))
-        #with torch.backends.cudnn.flags(enabled=False):
-        predicted_y = model(ts)
-
-        print('predicted_y{}'.format(predicted_y.shape))
-        fig,ax = plt.subplots(figsize=(12, 8))
-        plot_y = torch.squeeze(copy.deepcopy(Y)).detach()
-        plot_y[plot_y==0.0] = np.nan
-        sns.scatterplot(y=plot_y,x= torch.squeeze(copy.deepcopy(ts)).detach(), ax=ax)
-        sns.lineplot(y= torch.squeeze(copy.deepcopy(predicted_y.detach())),x= torch.squeeze(copy.deepcopy(ts)).detach(),ax=ax)
-        yt0 = torch.squeeze(Y)[0].detach()
-        if yt0 <= 0.0 or torch.isnan(yt0):
-            yt0 = 0.0001
-        parameters = [r, y_max, yt0]
-
-        from model_selection import logistic_ode_model
-        ts_plot = torch.squeeze(copy.deepcopy(ts).detach())
-        print('ts plot shape:{}'.format(ts_plot.shape))
-        x_y = odeint(func=logistic_ode_model, y0=yt0, t=ts_plot, args=(parameters,))[:, 0]
-        # print(x_y)
-        # x_y[x_y == 0.0] = np.nan
-        ax.plot(ts_plot, x_y, color="g", )  # label="Height (Model)"
-        ax.set_title('Logistic ODE informed PINN   r:{:.4f}, y_max:{:.4f}'.format(r, y_max),fontsize=14)
-        plt.savefig('{}/figure/parameters_changing_in_training_seq{}_physic_weight_{}_na_{}_{}_{}.png'.format(path,seq,weight,parameter_boundary,missing_value_precentage,save_name))
-        # plt.show()
-    else:
-        parameters_df.T.to_csv('{}/physic_weight_{}_na_{}_{}_{}'.format(path,weight,parameter_boundary,missing_value_precentage,save_name))
-
 
 def plot_multiple_sequences_colored_based_on_label_df(input_data:torch.tensor, plot_name:str, label_df):
     """
@@ -2064,13 +1798,11 @@ def plot_save_predict_curve(current_pwd, title, predict_y_test, r_value_pred, sa
     ax1.legend(handles, labels, title="color:genotype, markers:year")
     if (r_value_pred != None) & (y_max_pred != None):
         ax_1 = ax1.twinx()
-        from model_selection import logistic_ode_model
+        from Read_data_from_csvfiles import logistic_ode_model
         for seq in range(plot_predicted_y.shape[1]):
             yt0 = plot_predicted_y[0, seq]
             if yt0 <= 0.0 or np.isnan(yt0):
                 yt0 = 0.0001
-
-            #plot predicted y
 
             if torch.is_tensor(r_value_pred):
                 #if genetics input create multiple r
@@ -2300,7 +2032,6 @@ def evaluate_pinn_based_on_parameters(predicted_parameters:pd.DataFrame|str,true
     plt.ylabel('true')
     plt.title('predict r vs true r')
     plt.show()
-
 
     #generate data from predicted parameter, and compare with scaled data
     ts = torch.linspace(0.0, simulated_data_after_scaling.shape[0], simulated_data_after_scaling.shape[0]+1)# time sequences steps
@@ -2627,27 +2358,6 @@ def ODE_fit_run():
             print('test rmse{}'.format(rmse_loss_test))
             plot_ODE_fit(g, precit_y_test, rmse_loss_test, shape_dtw_loss_test,
                          copy.deepcopy(test_y_avg), ts_test, add_name='')
-            # # ax,fig = plt.subplots()
-            #
-
-
-            # test_rmse_seq=0.0
-            # test_dtw_seq=0.0
-            # for seq in range(test_y.shape[1]):
-            #     r_test, ymax_test = same_year_fit_to_one_ode_parameter(ts_validation, test_y[:,seq].unsqueeze(dim=-1))
-            #     # r_val, ymax_val = same_year_fit_to_one_ode_parameter(ts_validation, validation_y_avg)
-            #     fitted_parameters = [r_test, ymax_test]
-            #     precit_y_test = predict_based_on_ode(fitted_parameters, logistic_growth_ode, test_y[:,seq].unsqueeze(dim=-1),
-            #                                         ts_validation)
-            #     # train_y[train_y == 0.0] = np.nan
-            #     rmse_loss_test = mask_rmse_loss(test_y[:,seq].unsqueeze(dim=-1), precit_y_test).item()
-            #     test_rmse_seq+=rmse_loss_test
-            #     shape_dtw_loss_test = mask_dtw_loss(test_y[:,seq].unsqueeze(dim=-1), precit_y_val)
-            #     test_dtw_seq+=shape_dtw_loss_test
-            #     plot_ODE_fit(g, precit_y_test, rmse_loss_test, shape_dtw_loss_test, copy.deepcopy(test_y[:,seq].unsqueeze(dim=-1)), ts_test,add_name='{}'.format(seq))
-            # else:
-            #     rmse_loss_test=val_rmse_seq/test_y.shape[1]
-            #     shape_dtw_loss_test = val_dtw_seq/test_y.shape[1]
 
             test_losses.append(rmse_loss_test)
             test_dtw_losses.append(shape_dtw_loss_test)
@@ -2718,9 +2428,6 @@ def ODE_fit_run():
         print(f"\nAverage Validation shapeDTW across all genotypes: {average_val_error} std:{dtw_std_val}")
         print(f"\nAverage test shapeDTW across all genotypes: {average_test_error} std:{dtw_std_test}")
         ode_df.to_csv('logistic_ode_fit_multiple_genotype.csv')
-
-
-
 
 
 def plot_ode_fit_result(file_name):
@@ -3567,14 +3274,8 @@ def main():
     load_best_hyperparameters_and_cross_validate(best_hyperparameter_file='best_model_result_summary/pinn_penalize_r_best_hyperparameters_result.csv',
                                                  if_pinn=if_pinn,genotype=genotype,smooth_temp=smooth_temp,rescale=False)
     #
-    #
-    #
-    # for genotype in  [33, 106, 122, 133, 5, 30, 218, 2, 17, 254, 282, 294, 301, 302, 335, 339, 341, 6, 362]:
-    #     load_best_hyperparameters_and_cross_validate(best_hyperparameter_file='best_model_result_summary/pinn_penalize_r_best_hyperparameters_result.csv',
-    #                                                  if_pinn=True,genotype=genotype,smooth_temp=False)
-    # raise EOFError
-    # ODE_fit_run()
-    # plot_ode_fit_result(file_name='logistic_ode_fit_multiple_genotype.csv')
+    ODE_fit_run()
+    plot_ode_fit_result(file_name='logistic_ode_fit_multiple_genotype.csv')
     # raise EOFError
     # for genotype in [33, 106, 122, 133, 5, 30, 218, 2, 17, 254, 282, 294, 301, 302, 335, 339, 341, 6, 362]:
     #     print(genotype)
@@ -3598,46 +3299,19 @@ def main():
     # # read_full_data()
     # print(torch.cuda.is_available())
     # genotype_fit_logistic_ode_result = pd.DataFrame(columns=['genotype', 'rmse'], index=[0])
-    # genotype_list = pd.read_csv('../processed_data/fouryear_genotypes.csv',header=0,index_col=0)['genotype_id'].to_list()
-    # genotype_list=[106, 122, 133,17,218,254,  282, 294,2,   301, 302,  30,335, 339,33, 341, 362, 5, 6]
-    # for g in genotype_list:
-    #     print(g)
-    #     # genotype_fit_logistic_ode_result=fit_ode_for_seq_seperatelly_plot(data_path='../processed_data/align_height_env_same_length.csv',genotype=g,start_day=91,years=(2018, 2019, 2021, 2022),result_df=genotype_fit_logistic_ode_result)
-    #     run_logistic_ode_pinn(data_path='../processed_data/align_height_env_same_length.csv',
-    #                           mode='plot_pinn_test_moving_average_no_fill',
-    #                           genotype=g,
-    #                           if_pinn=False, years=(2018, 2019, 2021, 2022),
-    #                           start_day=115, parameter_boundary='pena_r', smooth=False, fill_in_na_at_start=True,
-    #                           rescale=False,randomseed=None,weight=2,temperature_pinn=False,
-    #                           environment_input=['Air_temperature_2_m'],genetics_input=False
-    #                           )
-    '''
-    result_csv = pd.read_csv('fit_ode_rmse.csv',header=0,index_col=0)
-    sns.jointplot(data=result_csv, x='r', y='y_max')
-    # plt.title('penalize negetive r')
-    plt.ylim(0, 1)
-    plt.xlim(0, 0.1)
-    plt.tight_layout()
-    # plt.savefig('penalize_negetive_r_predicted_parameters.png')
-    plt.show()
-    # summarize_result('pinn_result/PINN_mask_loss_no_earlystopgenotype301pinnmode_True_remove_outlier.csv')
-    # df = pd.read_csv('pinn_result/mean_result_no_early_stop_301_remove_out.csv')
-    # sns.lineplot(data=df,x='weight_physic',y='test_MSE')
-    # plt.show()
-    # #run pinn with genotype 301
-    # run_logistic_ode_pinn(data_path='../processed_data/align_height_env.csv', mode='no_earlystop', genotype=[301])
-    # #summarize_result()
-    #fit simulated data
-    #'../processed_data/simulated_data/simulated_data_for_pinn/simulated_X_data_logistic_without_noise.csv',
-    #            '../processed_data/simulated_data/simulated_data_for_pinn/simulated_X_data_logistic_time_dependent_noise_0.2.csv',
-    for file in [
-                 '../processed_data/simulated_data/simulated_data_for_pinn_600_time_steps/simulated_data_logistic_without_noise.csv',
-                 '../processed_data/simulated_data/simulated_data_for_pinn_600_time_steps/simulated_data_logistic_time_dependent_noise_0.2.csv',
-                 ]:
-        for weight in [2,4,6]:
-            for missing in [0.1,0.2,0.3,0.4,0.5]:
-                run_pinn_with_simulated_data(file,weight=weight,parameter_boundary=True,missing_value_precentage=missing)
-                run_pinn_with_simulated_data(file, weight=weight, parameter_boundary=False,missing_value_precentage=missing)
-    '''
+    genotype_list = pd.read_csv('../processed_data/fouryear_genotypes.csv',header=0,index_col=0)['genotype_id'].to_list()
+    genotype_list=[106, 122, 133,17,218,254,  282, 294,2,   301, 302,  30,335, 339,33, 341, 362, 5, 6]
+    for g in genotype_list:
+        print(g)
+        # genotype_fit_logistic_ode_result=fit_ode_for_seq_seperatelly_plot(data_path='../processed_data/align_height_env_same_length.csv',genotype=g,start_day=91,years=(2018, 2019, 2021, 2022),result_df=genotype_fit_logistic_ode_result)
+        run_logistic_ode_pinn(data_path='../processed_data/align_height_env_same_length.csv',
+                              mode='plot_pinn_test_moving_average_no_fill',
+                              genotype=g,
+                              if_pinn=False, years=(2018, 2019, 2021, 2022),
+                              start_day=115, parameter_boundary='pena_r', smooth=False, fill_in_na_at_start=True,
+                              rescale=False,randomseed=None,weight=2,temperature_pinn=False,
+                              environment_input=['Air_temperature_2_m'],genetics_input=False
+                              )
+
 if __name__ == '__main__':
     main()
